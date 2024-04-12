@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option go_package = "github.com/nimaCod/orderingsystem";
+
+package orderingsystem;
+
+service orderingsystem {
+  // Server Streaming RPC
+  rpc SearchOrders(OrderRequest) returns (stream OrderResponse) {}
+
+  // Bidirectional Streaming RPC
+  rpc ProcessOrders(stream OrderRequest) returns (stream OrderResponse) {}
+}
+
+message OrderRequest {
+  string query = 1;
+}
+
+message OrderResponse {
+  repeated string items = 1;
+  string timestamp = 2;
+}

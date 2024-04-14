@@ -1,21 +1,23 @@
 package main
 
-import ( 
+import (
 	"log"
 	"net"
 
 	pb "github.com/m-hariri/basic-go-grpc/proto"
 	"google.golang.org/grpc"
 )
+
 const (
 	port = ":8080"
 )
+
 type orderServer struct {
 	pb.OrderServiceServer
 }
 
-var ServerOrders = []string{"banana", "apple", "orange", "grape", "red apple", 
-"kiwi", "mango", "pear", "cherry", "green apple"}
+var ServerOrders = []string{"banana", "apple", "orange", "grape", "red apple",
+	"kiwi", "mango", "pear", "cherry", "green apple"}
 
 func main() {
 

@@ -1,7 +1,9 @@
 package main
 
-import ( 
+import (
+	"fmt"
 	"log"
+	"strings"
 
 	pb "github.com/m-hariri/basic-go-grpc/proto"
 	"google.golang.org/grpc"
@@ -20,12 +22,30 @@ func main() {
 	defer conn.Close()
 
 	client := pb.NewOrderServiceClient(conn)
+	for {
+		userInput := 0
+		fmt.Printf("Please enter 1 for Server Streaming and 2 for Bidirectional Streaming and 0 to exit: ")
+		fmt.Scan(&userInput)
 
-	orders := &pb.NamesList{
-		Names: []string{"salt", "mango", "ban"},
+		if userInput == 0 { break }
+
+		var inputNmaes string
+		fmt.Printf("please enter Order from this list(note values must be comma seperated and use no space):{banana, apple, orange, grape, red apple, kiwi, mango, pear, cherry, green apple} \n")
+		fmt.Scan(&inputNmaes)
+		if inputNmaes == "" { continue }
+
+		names := strings.Split(inputNmaes, ",")
+
+		orders := &pb.NamesList{
+			Names: names,
+		}
+
+		if userInput == 1 {
+			callGetOrderServerStream(client, orders)
+		} else if userInput == 2 {
+			callGetOrderBidirectionalStream(client, orders)
+		} else {
+			break
+		}
 	}
-
-
-	//callGetOrderServerStream(client, orders)
-	callGetOrderBidirectionalStream(client, orders)
 }

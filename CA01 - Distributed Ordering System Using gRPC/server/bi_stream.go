@@ -1,10 +1,10 @@
-
 package main
+
 import (
 	"io"
 	"log"
-	"strings"
 	"strconv"
+	"strings"
 
 	pb "github.com/m-hariri/basic-go-grpc/proto"
 )
@@ -26,12 +26,11 @@ func (s *orderServer) GetOrderBidirectionalStreaming(stream pb.OrderService_GetO
 			if strings.Contains(item, req.Name) {
 				found = true
 				res := &pb.OrderResponse{
-					Message:  "Item found! Item number: " + strconv.Itoa(i+1) + ", Item name: " + item,
+					Message: "Item found! Item number: " + strconv.Itoa(i+1) + ", Item name: " + item,
 				}
 				if err := stream.Send(res); err != nil {
 					return err
 				}
-				break
 			}
 		}
 		if !found {

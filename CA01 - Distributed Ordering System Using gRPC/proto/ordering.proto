@@ -1,0 +1,26 @@
+syntax="proto3";
+option go_package = "./proto";
+package order_service; 
+
+service OrderService { 
+    // server streaming RPC
+    rpc GetOrderServerStreaming(NamesList) returns (stream OrderResponse);
+    // bidirectional streaming RPC
+    rpc GetOrderBidirectionalStreaming(stream OrderRequest) returns (stream OrderResponse);
+}
+
+
+message OrderRequest {
+    string name = 1;
+}
+
+message OrderResponse {
+    string message = 1;
+}
+
+message NamesList {
+    repeated string names = 1;
+}
+
+
+

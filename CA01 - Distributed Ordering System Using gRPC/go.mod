@@ -1,6 +1,6 @@
-module github.com/nimaCod/orderingsystem
+module github.com/m-hariri/basic-go-grpc
 
-go 1.22.2
+go 1.18
 
 require (
 	google.golang.org/grpc v1.63.2

@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/google/uuid"
 	"log"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Event struct {
@@ -14,7 +15,7 @@ type Event struct {
 	Date             time.Time
 	TotalTickets     int
 	AvailableTickets int
-	ReservedTickets  []string
+	ReservedTickets  []string // Keep ID list of reserved tickets
 }
 
 type Ticket struct {
@@ -22,12 +23,13 @@ type Ticket struct {
 	EventId string
 }
 
-// ReserveRequest object must be sent to channel
+// Object to send Resesrve Request through channel
 type ReserveRequest struct {
 	EventId     string
 	TicketCount int
 }
 
+// Struct that Maps event to their ID for searching
 type EventList struct {
 	eventsList map[string]Event
 	count      int
@@ -37,19 +39,21 @@ type TicketService struct {
 	activeEvents EventList
 }
 
+// use google uuid to genereate UUID
 func generateUUID() string {
 	return uuid.New().String()
 }
 
+// Store Event in eventList
 func (e *EventList) Store(id string, event *Event) {
 	_, ok := e.eventsList[id]
 	if !ok {
 		e.eventsList[id] = *event
-		//fmt.Println(e.eventsList[id])
 		e.count++
-	}
+	} // TODO do we need to handle the else???? if id already exists?
 }
 
+// Find event From event list
 func (e *EventList) Load(id string) (Event, bool) {
 	val, ok := e.eventsList[id]
 	return val, ok
@@ -75,6 +79,7 @@ func (ts *TicketService) ListEvents() []Event {
 	return events
 }
 
+// Decrease available tickets of an event
 func (el *EventList) decreaseAvailableTicket(id string, count int) {
 	temp := el.eventsList[id]
 	temp.AvailableTickets -= count
@@ -89,7 +94,7 @@ func (ts *TicketService) BookTickets(eventID string, numTickets int) ([]string, 
 		return nil, fmt.Errorf("event not found")
 	}
 
-	//ev := event.(*Event)
+	// ev := event.(*Event)
 	ev := event
 	if ev.AvailableTickets < numTickets {
 		return nil, fmt.Errorf("not enough tickets available")
@@ -99,57 +104,75 @@ func (ts *TicketService) BookTickets(eventID string, numTickets int) ([]string, 
 	for i := 0; i < numTickets; i++ {
 		ticketID := generateUUID()
 		ticketIDs = append(ticketIDs, ticketID)
-		//fmt.Println("ticket count ", event.AvailableTickets, "\n")
-		//event.AvailableTickets--
-		//fmt.Println("ticket count ", event.AvailableTickets, "\n")
 		ev.ReservedTickets = append(ev.ReservedTickets, ticketID)
 	}
-	fmt.Println("ticket count ", event.AvailableTickets, "\n")
+	log.Println("ticket count ", event.AvailableTickets)
 
 	ts.activeEvents.decreaseAvailableTicket(eventID, numTickets)
-	fmt.Println("ticket count ", event.AvailableTickets, "\n")
+	log.Println("ticket count ", event.AvailableTickets)
 
 	ev.AvailableTickets -= numTickets
-	//ts.activeEvents.Store(eventID, ev)
 	ts.activeEvents.Store(eventID, &ev)
 	return ticketIDs, nil
 }
 
-func (ts *TicketService) receiveReserveRequest(requestChannel <-chan ReserveRequest) {
-	//for {
-	req, ok := <-requestChannel
-	if !ok {
-		//break
-	}
-	tickets, err := ts.BookTickets(req.EventId, req.TicketCount)
-	fmt.Println("ticket", tickets, err)
-	//}
-}
-
-func sendReserveRequest(req ReserveRequest, requestChannel chan<- ReserveRequest, wg *sync.WaitGroup) {
+// server
+func (ts *TicketService) receiveReserveRequest(requestChannel <-chan ReserveRequest, wg *sync.WaitGroup) {
 	defer wg.Done()
-	requestChannel <- req
+	for req := range requestChannel {
+		tickets, err := ts.BookTickets(req.EventId, req.TicketCount)
+		log.Println("ticket", tickets, err)
+	}
 }
 
-func main() {
-	var waitGroup sync.WaitGroup
-	var handler = new(TicketService)
-	handler.activeEvents.eventsList = make(map[string]Event)
-	requests := make(chan ReserveRequest, 100)
-	event, err := handler.CreateEvent("sirk", time.Now(), 100)
+// client
+func sendReserveRequest(req ReserveRequest, requestChannel chan<- ReserveRequest) {
+	requestChannel <- req
+	close(requestChannel)
+
+}
+
+// creates ticket service and initializes the eventlist of it
+func initticketService() *TicketService {
+	var ticketService = new(TicketService)
+	ticketService.activeEvents.eventsList = make(map[string]Event)
+	return ticketService
+}
+
+func createEvents(ticketService *TicketService) *Event {
+	event, err := ticketService.CreateEvent("event0", time.Now(), 100)
 	if err != nil {
 		log.Fatal(err)
 	} else {
-		fmt.Println(event)
+		log.Println("Created new Event: ", event)
 	}
+	return event // TODO: there would be no return
+}
+
+func createServer(wg *sync.WaitGroup,channel chan ReserveRequest,ticketService *TicketService){
+	wg.Add(1)
+	go ticketService.receiveReserveRequest(channel, wg)
+
+}
+
+func createClinet(channel chan ReserveRequest,event *Event){ 
 	req := ReserveRequest{EventId: event.ID, TicketCount: 5}
+	go sendReserveRequest(req, channel)
 
-	waitGroup.Add(1)
-	go sendReserveRequest(req, requests, &waitGroup)
+}
 
-	handler.receiveReserveRequest(requests)
+func main() {
+	log.Println("Program Started !")
+	var waitGroup sync.WaitGroup
+	var ticketService = initticketService()
+	var event = createEvents(ticketService) // TODO must avoid return value here
+
+	channel := make(chan ReserveRequest, 100)
+
+	createServer(&waitGroup,channel,ticketService)
+	createClinet(channel,event) // TODO Must not use event as argument
+
 	waitGroup.Wait()
-
-	fmt.Println(" sfdfd", handler.activeEvents.eventsList)
-	close(requests)
+	log.Println(" sfdfd", ticketService.activeEvents.eventsList)
+	log.Println("Program Finished!")
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -49,6 +50,8 @@ type EventList struct {
 
 type TicketService struct {
 	activeEvents EventList
+	eventCache   sync.Map           // this is for caching and ensures cache is concuren-safe
+	cacheSingle  singleflight.Group // this is used for caching and ensures only one go routine populates cache at a time
 }
 
 // use google uuid to genereate UUID
@@ -86,15 +89,32 @@ func (ts *TicketService) CreateEvent(name string, date time.Time, totalTickets i
 		AvailableTickets: totalTickets,
 	}
 	ok := ts.activeEvents.Store(event.ID, event)
+	// Here upates the cache
+	if ok == nil {
+		cachedValue, _ := ts.eventCache.Load("eventList")
+		cachedList, _ := cachedValue.([]Event)
+		cachedList = append(cachedList, *event)
+		ts.eventCache.Store("eventList", cachedList)
+		log.Println("Cache Appended for event Name:", event.Name)
+	}
 	return event, ok
 }
 
 func (ts *TicketService) ListEvents() []Event {
-	var events []Event
-	for _, val := range ts.activeEvents.eventsList {
-		events = append(events, val)
+	value, ok, _ := ts.cacheSingle.Do("eventList", func() (interface{}, error) {
+		var events []Event
+		for _, val := range ts.activeEvents.eventsList {
+			events = append(events, val)
+		}
+		return events, nil
+	})
+
+	if ok == nil {
+		return nil
 	}
-	return events
+
+	cachedList, _ := value.([]Event)
+	return cachedList
 }
 
 // Decrease available tickets of an event
@@ -124,6 +144,20 @@ func (ts *TicketService) BookTickets(eventID string, numTickets int) ([]string, 
 	}
 	ts.activeEvents.decreaseAvailableTicket(eventID, numTickets)
 	// ts.activeEvents.Store(eventID, &ev)
+
+	// This part Updates cache if change occured
+	cachedValue, _ := ts.eventCache.Load("eventList")
+	cachedList, _ := cachedValue.([]Event)
+	for i, event := range cachedList {
+		if event.ID == eventID {
+			event.AvailableTickets -= numTickets
+			cachedList[i] = event
+			log.Println("Cache updated for eventID:", eventID)
+			break
+		}
+	}
+	ts.eventCache.Store("eventList", cachedList)
+
 	return ticketIDs, nil
 }
 
@@ -133,8 +167,9 @@ func (ts *TicketService) handleReceiveUserRequest(req UserRequest, wg *sync.Wait
 	var serverResponse ServerResponse
 	if req.Action == GetListEvents { // TODO: Implement caching mechanism
 		serverResponse.message = "List of available events"
-		serverResponse.eventList = ts.ListEvents()
-		log.Println("Prepared list of events no cache")
+		cachedValue, _ := ts.eventCache.Load("eventList")
+		serverResponse.eventList, _ = cachedValue.([]Event)
+		log.Println("Prepared list of events")
 	} else {
 		tickets, err := ts.BookTickets(req.EventId, req.TicketCount) // TODO put this part in a go routine and continue to next request
 		if err != nil {
@@ -160,7 +195,6 @@ func (ts *TicketService) receiveUserRequest(requestChannel <-chan UserRequest, w
 	waitGroup.Wait()
 }
 
-
 // in this function we can create one or mutliple server codes to handle clients
 func createServer(wg *sync.WaitGroup, channel chan UserRequest, ticketService *TicketService) {
 	wg.Add(1)
@@ -178,6 +212,7 @@ func sendUserRequest(req UserRequest, requestChannel chan<- UserRequest) {
 func createClinet(channel chan UserRequest, event *Event) {
 	var responseChannel = make(chan ServerResponse)
 	req := UserRequest{Action: ReserveEvent, EventId: event.ID, TicketCount: 5, responses: responseChannel}
+	// req := UserRequest{Action: GetListEvents, EventId: event.ID, TicketCount: 5, responses: responseChannel}
 	go sendUserRequest(req, channel)
 	for req := range responseChannel {
 		log.Println("Got Response from server: ", req)
@@ -190,6 +225,8 @@ func createEvents(ticketService *TicketService) *Event {
 	if err != nil {
 		log.Println(err)
 	}
+	ticketService.CreateEvent("event1", time.Now(), 100)
+	ticketService.CreateEvent("event2", time.Now(), 100)
 	return event // TODO: there would be no return
 }
 
@@ -212,6 +249,6 @@ func main() {
 	createClinet(channel, event) // TODO Must not use event as argument
 
 	waitGroup.Wait()
-	log.Println("Event after reserve", ticketService.activeEvents.eventsList)
+	log.Println("Event list At The End", ticketService.activeEvents.eventsList)
 	log.Println("Program Finished!")
 }

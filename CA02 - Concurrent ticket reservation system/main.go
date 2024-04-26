@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
@@ -166,18 +167,20 @@ func (ts *TicketService) handleReceiveUserRequest(req UserRequest, wg *sync.Wait
 	defer wg.Done()
 	var serverResponse ServerResponse
 	if req.Action == GetListEvents { // TODO: Implement caching mechanism
+		log.Println("Got a GetListEvent request!")
 		serverResponse.message = "List of available events"
 		cachedValue, _ := ts.eventCache.Load("eventList")
 		serverResponse.eventList, _ = cachedValue.([]Event)
 		log.Println("Prepared list of events")
 	} else {
-		tickets, err := ts.BookTickets(req.EventId, req.TicketCount) // TODO put this part in a go routine and continue to next request
+		log.Println("Got Reserve ticket request for event: ", req.EventId, " count: ", req.TicketCount)
+		tickets, err := ts.BookTickets(req.EventId, req.TicketCount)
 		if err != nil {
 			serverResponse.message = err.Error()
 			log.Println(err.Error())
 		} else {
-			serverResponse.message = "Reserved succesfuly"
-			log.Println("ticket Reserved: ", tickets, err)
+			serverResponse.message = "Reserved Event " + req.EventId + " count: " + strconv.Itoa(req.TicketCount) + " succesfuly"
+			log.Println("tickets Reserved with UUIDS: ", tickets, " errors:", err)
 		}
 	}
 	req.responses <- serverResponse
@@ -202,21 +205,31 @@ func createServer(wg *sync.WaitGroup, channel chan UserRequest, ticketService *T
 }
 
 // client
-func sendUserRequest(req UserRequest, requestChannel chan<- UserRequest) {
+func sendUserRequest(req UserRequest, requestChannel chan<- UserRequest, wg *sync.WaitGroup) {
+	defer wg.Done()
 	requestChannel <- req
-	close(requestChannel)
+	for req := range req.responses {
+		log.Printf("Got Response from server: %+v", req)
+	}
 }
 
 // This function creates clinets
 // TODO add client interface
 func createClinet(channel chan UserRequest, event *Event) {
+	var waitGroup sync.WaitGroup
+
 	var responseChannel = make(chan ServerResponse)
-	req := UserRequest{Action: ReserveEvent, EventId: event.ID, TicketCount: 5, responses: responseChannel}
-	// req := UserRequest{Action: GetListEvents, EventId: event.ID, TicketCount: 5, responses: responseChannel}
-	go sendUserRequest(req, channel)
-	for req := range responseChannel {
-		log.Println("Got Response from server: ", req)
-	}
+	req := UserRequest{Action: GetListEvents, EventId: event.ID, TicketCount: 5, responses: responseChannel}
+	waitGroup.Add(1)
+	go sendUserRequest(req, channel, &waitGroup)
+
+	var responseChannel2 = make(chan ServerResponse)
+	req2 := UserRequest{Action: ReserveEvent, EventId: event.ID, TicketCount: 5, responses: responseChannel2}
+	waitGroup.Add(1)
+	go sendUserRequest(req2, channel, &waitGroup)
+
+	waitGroup.Wait()
+	close(channel)
 }
 
 // In this function we create events that clients will reserve
@@ -249,6 +262,6 @@ func main() {
 	createClinet(channel, event) // TODO Must not use event as argument
 
 	waitGroup.Wait()
-	log.Println("Event list At The End", ticketService.activeEvents.eventsList)
+	log.Printf("Event list At The End: %+v", ticketService.activeEvents.eventsList)
 	log.Println("Program Finished!")
 }

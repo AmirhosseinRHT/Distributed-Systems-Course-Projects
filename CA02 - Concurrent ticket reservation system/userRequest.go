@@ -5,11 +5,10 @@ type UserRequest struct {
 	EventId     string
 	TicketCount int
 	responses   chan ServerResponse
+	turn        int
 }
 
 type ServerResponse struct {
 	message   string
 	eventList []Event
 }
-
-// Some related functions might be added here

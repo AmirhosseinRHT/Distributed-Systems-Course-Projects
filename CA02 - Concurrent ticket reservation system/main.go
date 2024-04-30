@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+type inputCommand struct {
+	id    *string
+	value int
+}
+
 func createServer(wg *sync.WaitGroup, channel chan UserRequest, ticketService *TicketService) {
 	wg.Add(1)
 	go ticketService.receiveUserRequest(channel, wg)
@@ -27,11 +32,14 @@ func sendUserRequest(req UserRequest, requestChannel chan<- UserRequest, wg *syn
 
 // This function creates clients
 // TODO add client interface
-func createClient(channel chan UserRequest, commands []inputCommand) {
+func (ts *TicketService) createClient(channel chan UserRequest, commands []inputCommand) {
 	var waitGroup sync.WaitGroup
 	for _, cmd := range commands {
 		var responseChannel = make(chan ServerResponse)
-		req := UserRequest{Action: ReserveEvent, EventId: *cmd.id, TicketCount: cmd.value, responses: responseChannel}
+		req := UserRequest{Action: ReserveEvent, EventId: *cmd.id, TicketCount: cmd.value,
+			responses: responseChannel, turn: ts.activeEvents.eventsList[*cmd.id].waitedCount}
+		ts.activeEvents.eventsList[*cmd.id].waitedCount += 1
+		fmt.Println("//////////////////////////", ts.activeEvents.eventsList[*cmd.id].waitedCount)
 		if cmd.id == nil {
 			req.Action = GetListEvents
 		}
@@ -51,11 +59,6 @@ func createClient(channel chan UserRequest, commands []inputCommand) {
 
 	waitGroup.Wait()
 	close(channel)
-}
-
-type inputCommand struct {
-	id    *string
-	value int
 }
 
 // In this function we create events that clients will reserve
@@ -110,6 +113,7 @@ func userInterface() []inputCommand {
 func initTicketService() *TicketService {
 	var ticketService = new(TicketService)
 	ticketService.activeEvents.eventsList = make(map[string]*Event)
+	ticketService.reservedTickets = make(map[string]string)
 	return ticketService
 }
 
@@ -132,10 +136,10 @@ func main() {
 		//		fmt.Printf("%d: Command: %d\n", i+1, cmd.command)
 		//	}
 		//}
-		createClient(channel, commands)
+		ticketService.createClient(channel, commands)
 
 	}
 
-	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList["2"].AvailableTickets)
+	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList["1"])
 	log.Println("Program Finished!")
 }

@@ -17,7 +17,6 @@ type TicketService struct {
 	reservedTickets map[string]string
 }
 
-// Struct's methods implementations go here
 func (ts *TicketService) ListEvents() []Event {
 	value, ok, _ := ts.cacheSingle.Do("eventList", func() (interface{}, error) {
 		var events []*Event
@@ -45,30 +44,22 @@ func (ev *Event) wait(turn int) bool {
 }
 
 func (ts *TicketService) BookTickets(eventID string, numTickets int, reqTurn int) ([]string, error) {
-	// Implement concurrency control here (Step 3)
 	ev, ok := ts.activeEvents.Load(eventID)
-
 	if !ok {
 		return nil, fmt.Errorf("event not found")
 	}
 	ev.wait(reqTurn)
 	ev.mtx.Lock()
 	ev.turn += 1
-	//enoughTicket := ev.AvailableTickets < numTickets
-	//ev.mtx.Unlock()
-	if ev.AvailableTickets < numTickets { // TODO: Possible race condition scenario
+	if ev.AvailableTickets < numTickets {
 		ev.mtx.Unlock()
 		return nil, fmt.Errorf("not enough tickets available")
 	}
 	ts.activeEvents.decreaseAvailableTicket(eventID, numTickets)
-	// ts.activeEvents.Store(eventID, &ev)
-
-	// This part Updates cache if change occurred
 	cachedValue, _ := ts.eventCache.Load("eventList")
 	cachedList, _ := cachedValue.([]*Event)
 	for i, event := range cachedList {
 		if event.ID == eventID {
-			// event.AvailableTickets -= numTickets
 			cachedList[i] = event
 			log.Println("Cache updated for eventID:", eventID)
 			break
@@ -76,21 +67,41 @@ func (ts *TicketService) BookTickets(eventID string, numTickets int, reqTurn int
 	}
 	ts.eventCache.Store("eventList", cachedList)
 	ev.mtx.Unlock()
+	return ts.createTicketIDs(eventID, numTickets), nil
+}
 
+func (ts *TicketService) createTicketIDs(eventID string, count int) []string {
 	var ticketIDs []string
-	for i := 0; i < numTickets; i++ {
+	for i := 0; i < count; i++ {
 		ticketID := generateUUID()
 		ticketIDs = append(ticketIDs, ticketID)
 		ts.reservedTickets[ticketID] = eventID
 	}
-	return ticketIDs, nil
+	return ticketIDs
+}
+
+func (ts *TicketService) createClient(channel chan UserRequest, commands []inputCommand) {
+	var waitGroup sync.WaitGroup
+	for _, cmd := range commands {
+		var responseChannel = make(chan ServerResponse)
+		req := UserRequest{Action: ReserveEvent, EventId: *cmd.id, TicketCount: cmd.value,
+			responses: responseChannel, turn: ts.activeEvents.eventsList[*cmd.id].waitedCount}
+		ts.activeEvents.eventsList[*cmd.id].waitedCount += 1
+		if cmd.id == nil {
+			req.Action = GetListEvents
+		}
+		waitGroup.Add(1)
+		go sendUserRequest(req, channel, &waitGroup)
+	}
+	waitGroup.Wait()
+	close(channel)
 }
 
 // for each client request we create a thread and run this function that handles the request and sends the response
 func (ts *TicketService) handleReceiveUserRequest(req UserRequest, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var serverResponse ServerResponse
-	if req.Action == GetListEvents { // TODO: Implement caching mechanism
+	if req.Action == GetListEvents {
 		log.Println("Got a GetListEvent request!")
 		serverResponse.message = "List of available events"
 		cachedValue, _ := ts.eventCache.Load("eventList")
@@ -103,8 +114,10 @@ func (ts *TicketService) handleReceiveUserRequest(req UserRequest, wg *sync.Wait
 			serverResponse.message = err.Error()
 			log.Println(err.Error())
 		} else {
-			serverResponse.message = "Reserved Event " + req.EventId + " count: " + strconv.Itoa(req.TicketCount) + " succesfuly"
-			log.Println("tickets Reserved with UUIDS: ", tickets, " errors:", err)
+			serverResponse.message = "Reserved Event " + req.EventId + " count: " + strconv.Itoa(req.TicketCount) + " successfully"
+			for i, ticket := range tickets {
+				log.Println(i+1, " : ", ticket)
+			}
 		}
 	}
 	req.responses <- serverResponse

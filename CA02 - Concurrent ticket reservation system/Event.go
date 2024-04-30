@@ -20,10 +20,9 @@ type Event struct {
 	Date             time.Time
 	TotalTickets     int
 	AvailableTickets int
-	//ReservedTickets  []string // Keep ID list of reserved tickets
-	mtx         sync.Mutex
-	waitedCount int
-	turn        int
+	mtx              sync.Mutex
+	waitedCount      int
+	turn             int
 }
 
 type EventList struct {
@@ -57,9 +56,7 @@ func (e *EventList) Load(id string) (*Event, bool) {
 
 func (el *EventList) decreaseAvailableTicket(id string, count int) {
 	temp := el.eventsList[id]
-	//temp.mtx.Lock()
-	//defer temp.mtx.Unlock()
 	temp.AvailableTickets -= count
 	el.eventsList[id] = temp
-	log.Println("Decreased available tickets for ID: ", id, " count=", count, " available tickets after =", el.eventsList[id].AvailableTickets)
+	log.Println("Decreased available tickets for ID: ", id, " count :", count, " available tickets after =", el.eventsList[id].AvailableTickets)
 }

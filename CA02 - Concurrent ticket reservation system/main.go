@@ -109,7 +109,7 @@ func userInterface() []inputCommand {
 // creates ticket service and initializes the events of it
 func initTicketService() *TicketService {
 	var ticketService = new(TicketService)
-	ticketService.activeEvents.eventsList = make(map[string]Event)
+	ticketService.activeEvents.eventsList = make(map[string]*Event)
 	return ticketService
 }
 
@@ -136,6 +136,6 @@ func main() {
 
 	}
 
-	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList)
+	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList["2"].AvailableTickets)
 	log.Println("Program Finished!")
 }

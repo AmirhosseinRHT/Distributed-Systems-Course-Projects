@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"golang.org/x/sync/singleflight"
 	"log"
 	"strconv"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 type TicketService struct {
@@ -18,7 +19,7 @@ type TicketService struct {
 // Struct's methods implementations go here
 func (ts *TicketService) ListEvents() []Event {
 	value, ok, _ := ts.cacheSingle.Do("eventList", func() (interface{}, error) {
-		var events []Event
+		var events []*Event
 		for _, val := range ts.activeEvents.eventsList {
 			events = append(events, val)
 		}
@@ -36,11 +37,14 @@ func (ts *TicketService) ListEvents() []Event {
 func (ts *TicketService) BookTickets(eventID string, numTickets int) ([]string, error) {
 	// Implement concurrency control here (Step 3)
 	ev, ok := ts.activeEvents.Load(eventID)
+
 	if !ok {
 		return nil, fmt.Errorf("event not found")
 	}
-
-	if ev.AvailableTickets < numTickets { // TODO: Possible race condition scenario
+	ev.mtx.Lock()
+	enoughTicket := ev.AvailableTickets < numTickets
+	ev.mtx.Unlock()
+	if enoughTicket { // TODO: Possible race condition scenario
 		return nil, fmt.Errorf("not enough tickets available")
 	}
 
@@ -55,10 +59,10 @@ func (ts *TicketService) BookTickets(eventID string, numTickets int) ([]string, 
 
 	// This part Updates cache if change occured
 	cachedValue, _ := ts.eventCache.Load("eventList")
-	cachedList, _ := cachedValue.([]Event)
+	cachedList, _ := cachedValue.([]*Event)
 	for i, event := range cachedList {
 		if event.ID == eventID {
-			event.AvailableTickets -= numTickets
+			// event.AvailableTickets -= numTickets
 			cachedList[i] = event
 			log.Println("Cache updated for eventID:", eventID)
 			break
@@ -116,8 +120,8 @@ func (ts *TicketService) CreateEvent(name string, date time.Time, totalTickets i
 	// Here updates the cache
 	if ok == nil {
 		cachedValue, _ := ts.eventCache.Load("eventList")
-		cachedList, _ := cachedValue.([]Event)
-		cachedList = append(cachedList, *event)
+		cachedList, _ := cachedValue.([]*Event)
+		cachedList = append(cachedList, event)
 		ts.eventCache.Store("eventList", cachedList)
 		log.Println("Cache Appended for event Name:", event.Name)
 	}

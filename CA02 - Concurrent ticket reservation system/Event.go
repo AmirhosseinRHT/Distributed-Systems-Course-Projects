@@ -37,16 +37,14 @@ func generateUUID() string {
 // Store Event in eventList
 func (e *EventList) Store(id string, event *Event) error {
 	_, ok := e.eventsList[id]
-	if !ok {
+	if !ok { // event ID is never used
 		e.eventsList[id] = event
 		e.count++
-		log.Println("Stored New Event:", event)
+		log.Printf("Created New Event: %+v", event)
 		log.Println("Count events:", e.count)
 		return nil
-	} else { // TODO do we need to handle the else???? if id already exists?
-		log.Println("Event id already Exists!") // TODO: Does this ever happen?
-		return fmt.Errorf("event id already Exists")
 	}
+	return fmt.Errorf("event id already Exists")
 }
 
 func (e *EventList) Load(id string) (*Event, bool) {

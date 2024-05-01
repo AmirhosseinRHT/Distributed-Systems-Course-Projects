@@ -37,7 +37,6 @@ func createEvents(ticketService *TicketService) {
 	ticketService.CreateEvent("event0", time.Now(), 100)
 	ticketService.CreateEvent("event1", time.Now(), 100)
 	ticketService.CreateEvent("event2", time.Now(), 100)
-	//return event
 }
 
 func userInterface() []inputCommand {
@@ -89,25 +88,14 @@ func main() {
 	var waitGroup sync.WaitGroup
 	var ticketService = initTicketService()
 	createEvents(ticketService)
-	channel := make(chan UserRequest)
+	channel := make(chan UserRequest) // channel to connect client and server
 	createServer(&waitGroup, channel, ticketService)
-	log.Printf("Event list At The start: %+v \n\n\n", ticketService.activeEvents.eventsList)
 	commands := userInterface()
 	if commands != nil {
-		//fmt.Println("Parsed commands:")
-		//for i, cmd := range commands {
-		//	if cmd.id != nil {
-		//		fmt.Printf("%d: eventID: %s, ticketCount: %d\n", i+1, *cmd.id, cmd.command)
-		//	} else {
-		//		fmt.Printf("%d: Command: %d\n", i+1, cmd.command)
-		//	}
-		//}
 		ticketService.createClient(channel, commands)
-
 	}
-
-	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList["0"])
-	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList["1"])
-	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList["2"])
+	for event := range ticketService.activeEvents.eventsList { // logging status of events at the end of program
+		log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList[event])
+	}
 	log.Println("Program Finished!")
 }

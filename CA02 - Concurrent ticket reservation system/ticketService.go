@@ -33,12 +33,19 @@ func (ts *TicketService) ListEvents() []Event {
 }
 
 func (ev *Event) wait(turn int) bool {
-	for true {
+	for {
 		if ev.turn == turn {
 			return true
 		}
 	}
-	return true
+}
+
+func (ts *TicketService) addToCache(event *Event) {
+	cachedValue, _ := ts.eventCache.Load("eventList")
+	cachedList, _ := cachedValue.([]*Event)
+	cachedList = append(cachedList, event)
+	ts.eventCache.Store("eventList", cachedList)
+	log.Println("Cache Updated for event Name:", event.Name)
 }
 
 func (ts *TicketService) BookTickets(eventID string, numTickets int, reqTurn int) ([]string, error) {
@@ -51,19 +58,9 @@ func (ts *TicketService) BookTickets(eventID string, numTickets int, reqTurn int
 	ev.turn += 1
 	if ev.AvailableTickets < numTickets {
 		ev.mtx.Unlock()
-		return nil, fmt.Errorf("not enough tickets available")
+		return nil, fmt.Errorf("not enough tickets available for event: %s num requested tickets: %d  num available tickets: %d", eventID, numTickets, ev.AvailableTickets)
 	}
 	ts.activeEvents.decreaseAvailableTicket(eventID, numTickets)
-	cachedValue, _ := ts.eventCache.Load("eventList")
-	cachedList, _ := cachedValue.([]*Event)
-	for i, event := range cachedList {
-		if event.ID == eventID {
-			cachedList[i] = event
-			log.Println("Cache updated for eventID:", eventID)
-			break
-		}
-	}
-	ts.eventCache.Store("eventList", cachedList)
 	ev.mtx.Unlock()
 	return ts.createTicketIDs(eventID, numTickets), nil
 }
@@ -98,46 +95,51 @@ func (ts *TicketService) createClient(channel chan UserRequest, commands []input
 	close(channel)
 }
 
+func (ts *TicketService) handleGetEventListRequest(serverResponse *ServerResponse) {
+	log.Println("Got a GetListEvent request!")
+	serverResponse.message = "List of available events"
+	cachedValue, _ := ts.eventCache.Load("eventList") // load list from cache
+	serverResponse.eventList, _ = cachedValue.([]*Event)
+	log.Println("Prepared list of events")
+}
+
+func (ts *TicketService) handleBookTicket(serverResponse *ServerResponse, req UserRequest) {
+	log.Println("Got Reserve ticket request for event: ", req.EventId, " count: ", req.TicketCount)
+	_, err := ts.BookTickets(req.EventId, req.TicketCount, req.turn)
+	if err != nil {
+		serverResponse.message = err.Error()
+		log.Println(err.Error())
+	} else {
+		serverResponse.message = "Reserved Event " + req.EventId + " count: " + strconv.Itoa(req.TicketCount) + " successfully!"
+	}
+}
+
 // for each client request we create a thread and run this function that handles the request and sends the response
 func (ts *TicketService) handleReceiveUserRequest(req UserRequest, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var serverResponse ServerResponse
 	if req.Action == GetListEvents {
-		log.Println("Got a GetListEvent request!")
-		serverResponse.message = "List of available events"
-		cachedValue, _ := ts.eventCache.Load("eventList")
-		//fmt.Println("/////////////////////////////////////////////////////////", cachedValue)
-		serverResponse.eventList, _ = cachedValue.([]*Event)
-		log.Println("Prepared list of events")
+		ts.handleGetEventListRequest(&serverResponse)
 	} else {
-		log.Println("Got Reserve ticket request for event: ", req.EventId, " count: ", req.TicketCount)
-		tickets, err := ts.BookTickets(req.EventId, req.TicketCount, req.turn)
-		if err != nil {
-			serverResponse.message = err.Error()
-			log.Println(err.Error())
-		} else {
-			serverResponse.message = "Reserved Event " + req.EventId + " count: " + strconv.Itoa(req.TicketCount) + " successfully"
-			for i, ticket := range tickets {
-				log.Println(i+1, " : ", ticket)
-			}
-		}
+		ts.handleBookTicket(&serverResponse, req)
 	}
-	req.responses <- serverResponse
+	req.responses <- serverResponse // send response to sender client
 	close(req.responses)
 }
 
+// handle incoming requests in a go routine
 func (ts *TicketService) receiveUserRequest(requestChannel <-chan UserRequest, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var waitGroup sync.WaitGroup
 	for req := range requestChannel {
 		waitGroup.Add(1)
 		go ts.handleReceiveUserRequest(req, &waitGroup)
-		//time.Sleep(time.Millisecond)
 	}
 	waitGroup.Wait()
 }
 
 func (ts *TicketService) CreateEvent(name string, date time.Time, totalTickets int) (*Event, error) {
+
 	event := &Event{
 		ID:               strconv.Itoa(ts.activeEvents.count), // Generate a unique ID for the event
 		Name:             name,
@@ -147,14 +149,11 @@ func (ts *TicketService) CreateEvent(name string, date time.Time, totalTickets i
 		waitedCount:      0,
 		turn:             0,
 	}
-	ok := ts.activeEvents.Store(event.ID, event)
+	ok := ts.activeEvents.Store(event.ID, event) // store the new created event
 	// Here cache is being updated
 	if ok == nil {
-		cachedValue, _ := ts.eventCache.Load("eventList")
-		cachedList, _ := cachedValue.([]*Event)
-		cachedList = append(cachedList, event)
-		ts.eventCache.Store("eventList", cachedList)
-		log.Println("Cache Appended for event Name:", event.Name)
+		ts.addToCache(event)
 	}
 	return event, ok
+
 }

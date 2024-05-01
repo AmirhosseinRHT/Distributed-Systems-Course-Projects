@@ -25,11 +25,9 @@ func (ts *TicketService) ListEvents() []Event {
 		}
 		return events, nil
 	})
-
 	if ok == nil {
 		return nil
 	}
-
 	cachedList, _ := value.([]Event)
 	return cachedList
 }
@@ -82,13 +80,16 @@ func (ts *TicketService) createTicketIDs(eventID string, count int) []string {
 
 func (ts *TicketService) createClient(channel chan UserRequest, commands []inputCommand) {
 	var waitGroup sync.WaitGroup
+	var req UserRequest
 	for _, cmd := range commands {
 		var responseChannel = make(chan ServerResponse)
-		req := UserRequest{Action: ReserveEvent, EventId: *cmd.id, TicketCount: cmd.value,
-			responses: responseChannel, turn: ts.activeEvents.eventsList[*cmd.id].waitedCount}
-		ts.activeEvents.eventsList[*cmd.id].waitedCount += 1
-		if cmd.id == nil {
-			req.Action = GetListEvents
+		if cmd.id != nil {
+			req = UserRequest{Action: ReserveEvent, EventId: *cmd.id, TicketCount: cmd.value,
+				responses: responseChannel, turn: ts.activeEvents.eventsList[*cmd.id].waitedCount}
+			ts.activeEvents.eventsList[*cmd.id].waitedCount += 1
+		} else {
+			req = UserRequest{Action: GetListEvents, EventId: "0", TicketCount: 0,
+				responses: responseChannel, turn: 0}
 		}
 		waitGroup.Add(1)
 		go sendUserRequest(req, channel, &waitGroup)
@@ -105,7 +106,8 @@ func (ts *TicketService) handleReceiveUserRequest(req UserRequest, wg *sync.Wait
 		log.Println("Got a GetListEvent request!")
 		serverResponse.message = "List of available events"
 		cachedValue, _ := ts.eventCache.Load("eventList")
-		serverResponse.eventList, _ = cachedValue.([]Event)
+		//fmt.Println("/////////////////////////////////////////////////////////", cachedValue)
+		serverResponse.eventList, _ = cachedValue.([]*Event)
 		log.Println("Prepared list of events")
 	} else {
 		log.Println("Got Reserve ticket request for event: ", req.EventId, " count: ", req.TicketCount)
@@ -146,7 +148,7 @@ func (ts *TicketService) CreateEvent(name string, date time.Time, totalTickets i
 		turn:             0,
 	}
 	ok := ts.activeEvents.Store(event.ID, event)
-	// Here updates the cache
+	// Here cache is being updated
 	if ok == nil {
 		cachedValue, _ := ts.eventCache.Load("eventList")
 		cachedList, _ := cachedValue.([]*Event)

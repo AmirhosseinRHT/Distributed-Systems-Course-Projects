@@ -20,7 +20,16 @@ func sendUserRequest(req UserRequest, requestChannel chan<- UserRequest, wg *syn
 	defer wg.Done()
 	requestChannel <- req
 	for req := range req.responses {
-		log.Printf("Got Response from server: %+v", req)
+		if req.eventList == nil {
+			log.Printf("Got Response from server: %s \n", req.message)
+
+		} else {
+			log.Printf("Got Response from server: %s \n", req.message)
+			for i, e := range req.eventList {
+				fmt.Printf("Event %d : %s  , %s  , %s ,  %d  \n", i, e.ID, e.Name, e.Date.String(), e.AvailableTickets)
+			}
+
+		}
 	}
 }
 
@@ -97,6 +106,8 @@ func main() {
 
 	}
 
+	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList["0"])
 	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList["1"])
+	log.Printf("Event list At The End: %+v\n", ticketService.activeEvents.eventsList["2"])
 	log.Println("Program Finished!")
 }

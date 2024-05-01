@@ -1,7 +1,7 @@
 package main
 
 type UserRequest struct {
-	Action      int // Action = 0 to get list of events and 1 to reserve
+	Action      int
 	EventId     string
 	TicketCount int
 	responses   chan ServerResponse
@@ -10,5 +10,5 @@ type UserRequest struct {
 
 type ServerResponse struct {
 	message   string
-	eventList []Event
+	eventList []*Event
 }
